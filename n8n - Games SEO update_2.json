@@ -1,0 +1,343 @@
+{
+  "name": "n8n - Games SEO update_2",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "check-games-exist",
+              "leftValue": "=={{ $json}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -224,
+        112
+      ],
+      "id": "58b3d864-bf05-4637-b769-f23310bd59fa",
+      "name": "SyncGames"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT lang_code, language_name FROM supported_languages WHERE is_active = 1",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -656,
+        112
+      ],
+      "id": "f52ee114-4bfd-4abe-a2c2-e60483a3e8b8",
+      "name": "GetActiveLanguages",
+      "credentials": {
+        "mySql": {
+          "id": "GToE9OH5t0JbOQss",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT pg.gameID, pg.game_name, pg.game_description, pg.provider_id, pg.game_code\nFROM providers_games pg\nWHERE pg.launch_enable = 1\nAND NOT EXISTS (\n    SELECT 1 FROM providers_games_seo pgs \n    WHERE pgs.game_id = pg.gameID \n    AND pgs.lang_code = '{{ $json.lang_code }}'\n)\nLIMIT 5",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -448,
+        112
+      ],
+      "id": "bbd5bdc9-ffc0-48a8-92c9-09e4c6647e12",
+      "name": "GetGamesWithoutSEO",
+      "credentials": {
+        "mySql": {
+          "id": "GToE9OH5t0JbOQss",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const games = $input.all();\nconst results = [];\n\nfor (const game of games) {\n  if (game.json) {\n    results.push({\n      game_id: game.json.gameID,\n      game_name: game.json.game_name,\n      game_description: game.json.game_description,\n      lang_code: game.json.lang_code,\n      provider_id: game.json.provider_id,\n      game_code: game.json.game_code\n    });\n  }\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "9eb5b4e7-2ebf-4d1c-8481-47ab59c28350",
+      "name": "PrepareGameData"
+    },
+    {
+      "parameters": {
+        "model": "vikhr-llama3.1-8b-instruct:latest",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        144,
+        208
+      ],
+      "id": "98f9eea5-5b5d-4ca1-ba16-d3359ce5031a",
+      "name": "Ollama Chat Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "zPsJt7OpzXvRgLMw",
+          "name": "Ollama account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "table": {
+          "__rl": true,
+          "value": "providers_games_seo",
+          "mode": "list",
+          "cachedResultName": "providers_games_seo"
+        },
+        "dataMode": "defineBelow",
+        "columnToMatchOn": "game_id",
+        "valueToMatchOn": "={{ $('GetGamesWithoutSEO').item.json.gameID }}",
+        "valuesToSend": {
+          "values": [
+            {
+              "column": "game_name",
+              "value": "={{ $('GetGamesWithoutSEO').item.json.game_name }}"
+            },
+            {
+              "column": "lang_code",
+              "value": "={{ $('GetActiveLanguages').item.json.lang_code }}"
+            },
+            {
+              "column": "game_description",
+              "value": "={{ $json.game_description }}"
+            },
+            {
+              "column": "seo_title",
+              "value": "={{ $json.seo_data.seo_title }}"
+            },
+            {
+              "column": "seo_keywords",
+              "value": "={{ $json.seo_data.keywords }}"
+            },
+            {
+              "column": "seo_description",
+              "value": "={{ $json.seo_data.short_description }}"
+            },
+            {
+              "column": "h1_title",
+              "value": "={{ $json.seo_data.h1_title }}"
+            },
+            {
+              "column": "og_description",
+              "value": "={{ $json.seo_data.meta_description }}"
+            },
+            {
+              "column": "updated_at",
+              "value": "={{ $json.parsed_at }}"
+            },
+            {
+              "column": "seo_slug",
+              "value": "={{ $json.seo_data.seo_url }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        736,
+        0
+      ],
+      "id": "bb5fa087-fc8b-4f46-9778-72af862ecf12",
+      "name": "Insert or update rows in a table",
+      "credentials": {
+        "mySql": {
+          "id": "GToE9OH5t0JbOQss",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.game_description }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=Create SEO content for the game:\n\nGame Name: {{ $json.game_name }}\nDescription: {{ $json.game_description }}\nLanguage: {{ $('GetActiveLanguages').item.json.lang_code }}\n\nPlease provide the output in JSON format with the following fields:\n- seo_title (up to 60 characters)\n- meta_description (up to 160 characters)\n- seo_url (SEO-friendly URL based on the game name)\n- h1_title\n- short_description (short description, 2-3 sentences)\n- full_description (full SEO description, 4-5 sentences)\n- keywords (5-7 relevant keywords, separated by commas)"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        208,
+        0
+      ],
+      "id": "7b338b56-c51f-4d17-8baa-845c683c3f0c",
+      "name": "Generate SEO Content"
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputData = $input.all();\nconst results = [];\n\nfor (const item of inputData) {\n  const gameData = item.json || item;\n  if (!gameData) continue;\n\n  const gameId = gameData.game_id || gameData.gameID || null;\n  const langCode = gameData.lang_code || null;\n  const gameName = gameData.game_name || null;\n  const gameDescription = gameData.game_description || null;\n\n  let seoContent = {};\n\n  try {\n    // Пытаемся извлечь JSON из текстовых полей\n    if (gameData.text) {\n      const jsonMatch = gameData.text.match(/\\{[\\s\\S]*\\}/);\n      if (jsonMatch) seoContent = JSON.parse(jsonMatch[0]);\n    } else if (gameData.openAiResponse) {\n      seoContent = typeof gameData.openAiResponse === 'string'\n        ? JSON.parse(gameData.openAiResponse)\n        : gameData.openAiResponse;\n    } else if (gameData.json && gameData.json.text) {\n      const jsonMatch = gameData.json.text.match(/\\{[\\s\\S]*\\}/);\n      if (jsonMatch) seoContent = JSON.parse(jsonMatch[0]);\n    }\n\n    results.push({\n      json: {\n        game_id: gameId,\n        lang_code: langCode,\n        game_name: gameName,\n        game_description: gameDescription,\n        seo_data: seoContent || {},\n        parsed_at: new Date().toISOString().slice(0, 19).replace('T', ' ')\n      }\n    });\n\n  } catch (error) {\n    results.push({\n      json: {\n        game_id: gameId,\n        lang_code: langCode,\n        game_name: gameName,\n        game_description: gameDescription,\n        error: error.message,\n        parsed_at: new Date().toISOString().slice(0, 19).replace('T', ' ')\n      }\n    });\n  }\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        0
+      ],
+      "id": "367c6714-0f55-4e41-bf7d-6ce7b00edc3d",
+      "name": "Prepare SEO Data"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -864,
+        112
+      ],
+      "id": "4bba7360-449b-423e-83e1-66491cf89520",
+      "name": "Schedule Trigger"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "SyncGames": {
+      "main": [
+        [
+          {
+            "node": "PrepareGameData",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GetActiveLanguages": {
+      "main": [
+        [
+          {
+            "node": "GetGamesWithoutSEO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GetGamesWithoutSEO": {
+      "main": [
+        [
+          {
+            "node": "SyncGames",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PrepareGameData": {
+      "main": [
+        [
+          {
+            "node": "Generate SEO Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate SEO Content",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate SEO Content": {
+      "main": [
+        [
+          {
+            "node": "Prepare SEO Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare SEO Data": {
+      "main": [
+        [
+          {
+            "node": "Insert or update rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "GetActiveLanguages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "31c0c82f-942b-4a39-a025-3737b6d3a01b",
+  "meta": {
+    "instanceId": "9ce263ea74ac56142ad0b445edd4996f0dce195bb2058608aecc86f0fd24906f"
+  },
+  "id": "l0q5oobnTjmtkB7E",
+  "tags": []
+}
